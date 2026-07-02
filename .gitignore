@@ -1,0 +1,13 @@
+.vibecode-backup*/
+
+# Runtime logs (not source)
+.claude/hooks/.logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+proxy_manager.db
+*.db

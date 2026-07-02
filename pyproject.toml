@@ -1,0 +1,24 @@
+[project]
+name = "proxy-manager"
+version = "0.1.0"
+description = "Multi-instance proxy manager: gan IP rieng cho tung app tren cung 1 may"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "psutil>=5.9",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
+[project.scripts]
+proxy-manager = "proxy_manager.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

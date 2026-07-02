@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Proxy Manager</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-dot"></span> Proxy Manager
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-view="profiles">
+        <span class="nav-icon">&#9635;</span> Profiles
+      </button>
+      <button class="nav-item" data-view="proxies">
+        <span class="nav-icon">&#8644;</span> Proxy Pool
+      </button>
+      <button class="nav-item" data-view="logs">
+        <span class="nav-icon">&#9776;</span> Nhật ký
+      </button>
+    </nav>
+    <div class="sidebar-footer">MVP · Giai đoạn 1</div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- ===== Profiles view ===== -->
+    <section id="view-profiles" class="view">
+      <header class="toolbar">
+        <h1>Profiles</h1>
+        <div class="toolbar-actions">
+          <input type="text" id="profile-search" class="search-input" placeholder="Tìm profile..." />
+          <button id="open-create-profile" class="btn btn-primary">+ Tạo profile</button>
+        </div>
+      </header>
+
+      <form id="profile-form" class="inline-form" hidden>
+        <input type="text" id="profile-name" placeholder="Tên profile" required />
+        <input type="text" id="profile-proxy-ids" placeholder="Proxy IDs (vd: 1,2)" required />
+        <button type="submit" class="btn btn-primary">Tạo</button>
+        <button type="button" id="cancel-create-profile" class="btn btn-ghost">Huỷ</button>
+      </form>
+
+      <div class="table-card">
+        <table id="profile-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Tên</th>
+              <th>Cổng local</th>
+              <th>Trạng thái</th>
+              <th>Kết nối</th>
+              <th>Auto-rotate</th>
+              <th class="col-actions">Hành động</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty-state" id="profile-empty" hidden>Chưa có profile nào. Bấm "Tạo profile" để bắt đầu.</div>
+      </div>
+    </section>
+
+    <!-- ===== Proxy Pool view ===== -->
+    <section id="view-proxies" class="view" hidden>
+      <header class="toolbar">
+        <h1>Proxy Pool</h1>
+        <div class="toolbar-actions">
+          <label class="btn btn-ghost file-btn">
+            Import file
+            <input type="file" id="proxy-file" accept=".txt,.csv" hidden />
+          </label>
+          <button type="button" id="health-check-btn" class="btn btn-primary">Health Check All</button>
+        </div>
+      </header>
+
+      <div class="table-card">
+        <table id="proxy-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Proxy</th>
+              <th>Trạng thái</th>
+              <th>Latency</th>
+              <th>IP thoát</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty-state" id="proxy-empty" hidden>Chưa có proxy nào. Import file để bắt đầu.</div>
+      </div>
+    </section>
+
+    <!-- ===== Logs view ===== -->
+    <section id="view-logs" class="view" hidden>
+      <header class="toolbar">
+        <h1>Nhật ký realtime</h1>
+      </header>
+      <pre id="log-box" class="log-box"></pre>
+    </section>
+
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
