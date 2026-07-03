@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import tempfile
 from pathlib import Path
 
@@ -19,7 +20,10 @@ from ..proxy_pool import health_check_all, parse_proxy_file
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="Proxy Manager Dashboard")
-db = Database()
+# PROXY_MANAGER_DB_PATH cho phep chay nhieu instance / test co lap voi DB rieng,
+# khong bi dinh cung mot file trong ~/.proxy_manager.
+_db_path = os.environ.get("PROXY_MANAGER_DB_PATH")
+db = Database(_db_path) if _db_path else Database()
 manager = ProfileManager(db)
 
 _ws_clients: set[WebSocket] = set()
@@ -51,6 +55,11 @@ class ProfileIn(BaseModel):
     assigned_process_names: list[str] = []
     auto_rotate_enabled: bool = False
     auto_rotate_seconds: int = 600
+
+
+class LaunchIn(BaseModel):
+    browser: str = "chrome"
+    url: str | None = None
 
 
 # ---------- Proxy endpoints ----------
@@ -101,6 +110,7 @@ def list_profiles():
     for p in db.list_profiles():
         d = dataclasses.asdict(p)
         d["active_connections"] = manager.gateway_stats(p.id)
+        d["launched_apps"] = manager.launched_apps(p.id)
         out.append(d)
     return out
 
@@ -153,6 +163,27 @@ async def rotate_profile(profile_id: int):
     return dataclasses.asdict(profile)
 
 
+@app.get("/api/browsers")
+def list_browsers():
+    from ..launcher import available_browsers
+
+    return {"available": available_browsers()}
+
+
+@app.post("/api/profiles/{profile_id}/launch")
+async def launch_profile_app(profile_id: int, payload: LaunchIn):
+    from ..launcher import LauncherError
+
+    try:
+        pid = manager.launch_app(profile_id, browser=payload.browser, url=payload.url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except LauncherError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    await broadcast({"type": "app_launched", "profile_id": profile_id, "pid": pid})
+    return {"profile_id": profile_id, "pid": pid, "browser": payload.browser}
+
+
 @app.post("/api/profiles/{profile_id}/leak-test")
 async def leak_test_profile(profile_id: int):
     profile = db.get_profile(profile_id)
@@ -189,8 +220,21 @@ async def ws_logs(websocket: WebSocket):
 
 
 # ---------- Static dashboard ----------
+class NoCacheStaticFiles(StaticFiles):
+    """Tat cache cho tai san static -- de UI cap nhat ngay khi reload trong luc dev
+    (dashboard noi bo, khong can toi uu cache CDN)."""
+
+    def is_not_modified(self, response_headers, request_headers) -> bool:  # noqa: ARG002
+        return False
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+
+
 if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)

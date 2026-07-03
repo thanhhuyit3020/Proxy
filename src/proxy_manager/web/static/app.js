@@ -92,11 +92,12 @@ async function refreshProfiles() {
       <td>${p.name}</td>
       <td>127.0.0.1:${p.local_port}</td>
       <td><span class="status status-${p.status}">${p.status}</span></td>
-      <td>${p.active_connections}</td>
+      <td>${p.active_connections} kết nối${p.launched_apps ? ` · ${p.launched_apps} app` : ""}</td>
       <td><span class="toggle-badge ${p.auto_rotate_enabled ? "on" : ""}">${p.auto_rotate_enabled ? "Bật" : "Tắt"}</span></td>
       <td class="col-actions">
         <button data-id="${p.id}" class="btn-icon start-profile">Start</button>
         <button data-id="${p.id}" class="btn-icon stop-profile">Stop</button>
+        <button data-id="${p.id}" class="btn-icon launch-profile">Mở app</button>
         <button data-id="${p.id}" class="btn-icon rotate-profile">Đổi IP</button>
         <button data-id="${p.id}" class="btn-icon leak-test-profile">Leak Test</button>
         <button data-id="${p.id}" class="btn-icon danger del-profile">Xoá</button>
@@ -110,11 +111,39 @@ async function refreshProfiles() {
   bind(".start-profile", async (id) => { await api(`/api/profiles/${id}/start`, { method: "POST" }); log(`Profile ${id} started`); refreshProfiles(); });
   bind(".stop-profile", async (id) => { await api(`/api/profiles/${id}/stop`, { method: "POST" }); log(`Profile ${id} stopped`); refreshProfiles(); });
   bind(".rotate-profile", async (id) => { await api(`/api/profiles/${id}/rotate`, { method: "POST" }); log(`Profile ${id} đã đổi IP`); refreshProfiles(); });
+  bind(".launch-profile", async (id) => {
+    const browser = document.getElementById("browser-select").value;
+    try {
+      const res = await api(`/api/profiles/${id}/launch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ browser }),
+      });
+      log(`Đã mở ${browser} (PID ${res.pid}) cho profile ${id}`);
+      refreshProfiles();
+    } catch (err) {
+      log(`Lỗi mở app profile ${id}: ${err.message}`);
+    }
+  });
   bind(".leak-test-profile", async (id) => {
     const result = await api(`/api/profiles/${id}/leak-test`, { method: "POST" });
     log(`Leak test profile ${id}: IP ${result.ip_leak_pass ? "PASS" : "FAIL"}, kill-switch ${result.kill_switch_pass ? "PASS" : "FAIL"}`);
   });
   bind(".del-profile", async (id) => { await api(`/api/profiles/${id}`, { method: "DELETE" }); refreshProfiles(); });
+}
+
+async function loadBrowsers() {
+  const select = document.getElementById("browser-select");
+  try {
+    const { available } = await api("/api/browsers");
+    const options = available.length ? available : ["chrome", "edge", "brave"];
+    select.innerHTML = options.map((b) => `<option value="${b}">${b}</option>`).join("");
+    if (!available.length) {
+      log("Chưa phát hiện trình duyệt nào — danh sách mặc định được dùng, có thể mở lỗi.");
+    }
+  } catch {
+    select.innerHTML = ["chrome", "edge", "brave"].map((b) => `<option value="${b}">${b}</option>`).join("");
+  }
 }
 
 document.getElementById("profile-search").addEventListener("input", () => refreshProfiles());
@@ -149,4 +178,5 @@ function connectWs() {
 
 refreshProxies();
 refreshProfiles();
+loadBrowsers();
 connectWs();

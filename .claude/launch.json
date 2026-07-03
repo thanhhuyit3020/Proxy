@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "static-preview",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "serve", "-l", "5173", "src/proxy_manager/web"],
-      "port": 5173
+      "name": "proxy-manager",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "proxy_manager.cli", "--port", "8800"],
+      "port": 8800
     }
   ]
 }

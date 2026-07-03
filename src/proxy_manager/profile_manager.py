@@ -6,8 +6,11 @@ import logging
 import random
 import socket
 
+import psutil
+
 from .db import Database
 from .gateway import ProfileGateway
+from .launcher import launch_browser
 from .models import Profile, ProfileStatus, Proxy
 
 logger = logging.getLogger("proxy_manager.profile_manager")
@@ -20,6 +23,8 @@ class ProfileManager:
         self.db = db
         self._gateways: dict[int, ProfileGateway] = {}
         self._rotate_tasks: dict[int, asyncio.Task] = {}
+        # PID cac tien trinh (trinh duyet) da mo cho tung profile
+        self._launched_pids: dict[int, list[int]] = {}
 
     # ---------- Port allocation ----------
     def _pick_free_port(self) -> int:
@@ -40,8 +45,16 @@ class ProfileManager:
         self, name: str, proxy_ids: list[int], assigned_process_names: list[str] | None = None,
         auto_rotate_enabled: bool = False, auto_rotate_seconds: int = 600,
     ) -> Profile:
+        name = name.strip()
+        if not name:
+            raise ValueError("ten profile khong duoc de trong")
         if not proxy_ids:
             raise ValueError("profile can it nhat 1 proxy")
+        for proxy_id in proxy_ids:
+            if self.db.get_proxy(proxy_id) is None:
+                raise ValueError(f"proxy id={proxy_id} khong ton tai")
+        if auto_rotate_seconds < 30:
+            raise ValueError("auto_rotate_seconds toi thieu 30 giay")
         port = self._pick_free_port()
         profile = Profile(
             id=None,
@@ -154,3 +167,24 @@ class ProfileManager:
     def gateway_stats(self, profile_id: int) -> int:
         gateway = self._gateways.get(profile_id)
         return gateway.active_connections if gateway else 0
+
+    # ---------- Process launcher (Layer A) ----------
+    def launch_app(self, profile_id: int, browser: str = "chrome", url: str | None = None) -> int:
+        """Mo trinh duyet gan proxy cua profile. Profile phai dang chay (gateway mo)
+        thi moi launch, neu khong app se tro toi cong dong -> khong ket noi duoc."""
+        profile = self.db.get_profile(profile_id)
+        if profile is None:
+            raise ValueError("profile khong ton tai")
+        if profile.status != ProfileStatus.RUNNING:
+            raise ValueError("profile chua chay -- bam Start truoc khi mo app")
+
+        pid = launch_browser(profile_id, profile.local_port, browser=browser, url=url)
+        self._launched_pids.setdefault(profile_id, []).append(pid)
+        return pid
+
+    def launched_apps(self, profile_id: int) -> int:
+        """Dem so tien trinh da mo cho profile ma VAN con song (loc bo tien trinh da tat)."""
+        pids = self._launched_pids.get(profile_id, [])
+        alive = [pid for pid in pids if psutil.pid_exists(pid)]
+        self._launched_pids[profile_id] = alive
+        return len(alive)

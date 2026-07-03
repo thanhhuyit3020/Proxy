@@ -151,6 +151,10 @@ class ProfileGateway:
 
         # plain HTTP (absolute-URI): parse host tu target
         host, port, path = _parse_absolute_uri(target)
+        if not host:
+            writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+            await writer.drain()
+            return
         try:
             up_reader, up_writer = await open_via_upstream(proxy, host, port)
         except Exception:
