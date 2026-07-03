@@ -88,9 +88,10 @@ body {
   justify-content: space-between;
   margin-bottom: 1.25rem;
   gap: 1rem;
+  flex-wrap: wrap;  /* tren man hep: tieu de + o tim + nut xuong dong, khong tran */
 }
 
-.toolbar-actions { display: flex; gap: 0.6rem; align-items: center; }
+.toolbar-actions { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
 
 .search-input, .inline-form input[type="text"] {
   border: 1px solid var(--border);
@@ -179,7 +180,7 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  overflow: hidden;
+  overflow-x: auto;  /* bang cuon ngang trong khung, khong day ca trang rong ra */
 }
 
 table { border-collapse: collapse; width: 100%; }
@@ -255,4 +256,25 @@ tbody tr:hover { background: #fafbfc; }
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: 0.78rem;
   white-space: pre-wrap;
+}
+
+/* ---------- Responsive: man hep (tablet doc / mobile) ---------- */
+@media (max-width: 900px) {
+  /* Sidebar thu gon thanh thanh icon: an chu, chi con bieu tuong */
+  .sidebar { width: 62px; padding: 1rem 0.4rem; }
+  .sidebar-logo { justify-content: center; font-size: 0; padding: 0 0 1rem; }
+  .sidebar-logo .logo-dot { width: 14px; height: 14px; }
+  .nav-item { justify-content: center; padding: 0.6rem 0; font-size: 0; gap: 0; }
+  .nav-item .nav-icon { font-size: 1.1rem; }
+  .sidebar-footer { display: none; }
+
+  .main { padding: 1rem 1.1rem; }
+  .view h1 { font-size: 1.15rem; }
+  .search-input { width: 100%; max-width: 260px; }
+}
+
+/* Man rat hep: cho phep o tim chiem tron dong */
+@media (max-width: 560px) {
+  .search-input { max-width: none; flex: 1 1 100%; }
+  .field-row > label:first-child { width: 100%; }
 }
