@@ -24,10 +24,32 @@ Da co (Giai doan 1):
   export CSV/JSON.
 - Web dashboard (FastAPI + WebSocket) tai `http://127.0.0.1:8800`.
 
-Chua lam (Giai doan 2, xem `docs/network-monitoring-detection-test-plan.md` cho quy trinh kiem thu):
-- Layer B: ep dinh tuyen tang he thong (WinDivert) cho app khong ho tro proxy.
-- Chong DNS leak / IPv6 leak o tang he thong.
+Dang lam (Giai doan 2 — Layer B, xem thiet ke `docs/layer-b-design.md`):
+- **B1 (xong): WinDivert bring-up** — nap driver, bat goi outbound TCP + reinject nguyen trang,
+  master on/off. Self-test thu cong: xem muc "Layer B" ben duoi.
+- B2..B7 (chua lam): PID->profile, transparent redirect, kill-switch muc goi, IPv6/DNS, QUIC, dong goi.
+
+Chua lam:
+- Chong DNS leak / IPv6 leak o tang he thong (B5).
 - WebRTC leak test cho trinh duyet.
+
+## Layer B (ep dinh tuyen — CAN Administrator + Windows)
+
+Cai them WinDivert:
+
+```bash
+pip install -e ".[layerb]"
+```
+
+Kiem chung B1 (bring-up) tren may that — mo terminal **Run as administrator** roi chay:
+
+```bash
+.venv\Scripts\python.exe -m proxy_manager.layerb.selftest_b1
+```
+
+Trong ~15 giay, mo trinh duyet vao mot trang web. PASS neu trang tai binh thuong VA
+`packets_seen > 0` (WinDivert bat duoc goi va reinject nguyen trang, khong lam dut ket noi).
+Layer B chi chay tren Windows co quyen admin; khi thieu, cac chuc nang Layer A van hoat dong binh thuong.
 
 ## Cai dat
 
