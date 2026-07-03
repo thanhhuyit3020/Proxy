@@ -11,6 +11,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import psutil
+
 # Thu muc user-data-dir co lap cho tung profile (moi profile = 1 phien trinh duyet rieng)
 BROWSER_PROFILES_DIR = Path.home() / ".proxy_manager" / "browser-profiles"
 
@@ -56,6 +58,20 @@ def find_browser(browser: str) -> str | None:
 def available_browsers() -> list[str]:
     """Danh sach trinh duyet phat hien duoc tren may nay."""
     return [name for name in _CANDIDATE_PATHS if find_browser(name) is not None]
+
+
+def list_running_process_names() -> list[str]:
+    """Danh sach ten tien trinh (vd 'chrome.exe') dang chay, khong trung, da sap xep.
+    Dung cho UI chon app de gan vao profile."""
+    names = set()
+    for proc in psutil.process_iter(["name"]):
+        try:
+            name = proc.info.get("name")
+            if name:
+                names.add(name)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return sorted(names, key=str.lower)
 
 
 def build_command(exe: str, local_port: int, data_dir: Path, url: str | None) -> list[str]:

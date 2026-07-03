@@ -7,8 +7,11 @@ moi profile di ra Internet qua mot proxy (IP) rieng, quan ly tap trung qua web d
 
 Da co (Giai doan 1):
 - Proxy pool: import tu file `.txt`/`.csv`, health check (latency + IP thoat thuc te).
-- Profile manager: tao/xoa profile, cap phat cong local tu dong, sticky IP + doi IP thu cong,
-  auto-rotate theo lich (bat/tat duoc).
+- Profile manager: tao/sua/xoa profile, cap phat cong local tu dong, sticky IP + doi IP thu cong,
+  auto-rotate theo lich (bat/tat duoc). Sua profile: doi ten, doi pool proxy, bat/tat auto-rotate +
+  chu ky, gan app theo ten tien trinh (co picker chon tu tien trinh dang chay).
+- Auto-failover: sau moi health check, profile nao co proxy active vua chet se tu chuyen sang
+  proxy con song trong pool. Neu het proxy song -> giu nguyen, kill-switch chan traffic (khong lo IP that).
 - Layer A gateway: moi profile la 1 listener `127.0.0.1:<port>` noi ca SOCKS5 lan HTTP/HTTPS proxy,
   chain qua upstream proxy (HTTP/HTTPS/SOCKS5, co auth).
 - Kill-switch fail-closed: neu proxy active bi danh dau chet, gateway tu choi ket noi thay vi
@@ -42,13 +45,14 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Bo test hien co (60 test case): parse proxy list, SQLite CRUD, SOCKS5/HTTP CONNECT client
-handshake (mock stream, khong can proxy that), profile manager (cap phat cong, rotate, guard
-xoa khi dang chay, guard launch khi chua Start), process launcher (build lenh Chromium voi
-socks5 + user-data-dir co lap, mock subprocess), leak-test export CSV/JSON, end-to-end
-kill-switch fail-closed (gateway tu choi ket noi khi khong co proxy active -- dam bao khong bao
-gio fallback ra IP that), va smoke test FastAPI dashboard (dung DB tam qua bien moi truong
-`PROXY_MANAGER_DB_PATH`, khong dung vao `~/.proxy_manager` that).
+Bo test hien co (70 test case): parse proxy list, SQLite CRUD, SOCKS5/HTTP CONNECT client
+handshake (mock stream, khong can proxy that), profile manager (cap phat cong, rotate, sua profile
+partial-update, auto-failover khi proxy chet, guard xoa khi dang chay, guard launch khi chua Start),
+process launcher (build lenh Chromium voi socks5 + user-data-dir co lap, mock subprocess), leak-test
+export CSV/JSON, end-to-end kill-switch fail-closed (gateway tu choi ket noi khi khong co proxy
+active -- dam bao khong bao gio fallback ra IP that), va smoke test FastAPI dashboard (edit profile,
+process picker endpoint; dung DB tam qua bien moi truong `PROXY_MANAGER_DB_PATH`, khong dung vao
+`~/.proxy_manager` that).
 
 ## Dong goi EXE (PyInstaller)
 

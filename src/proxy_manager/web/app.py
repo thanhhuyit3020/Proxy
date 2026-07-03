@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -57,6 +58,15 @@ class ProfileIn(BaseModel):
     auto_rotate_seconds: int = 600
 
 
+class ProfileUpdateIn(BaseModel):
+    # Tat ca optional -> chi cap nhat truong duoc gui (None = giu nguyen)
+    name: str | None = None
+    proxy_ids: list[int] | None = None
+    assigned_process_names: list[str] | None = None
+    auto_rotate_enabled: bool | None = None
+    auto_rotate_seconds: int | None = None
+
+
 class LaunchIn(BaseModel):
     browser: str = "chrome"
     url: str | None = None
@@ -93,7 +103,11 @@ async def health_check_endpoint():
     results = await health_check_all(proxies)
     for p in results:
         db.update_proxy_health(p.id, p.status, p.latency_ms, p.observed_ip, p.last_checked_at)
+    # Sau health check: tu chuyen cac profile co proxy active vua chet sang proxy song
+    switched = manager.failover_dead_proxies()
     await broadcast({"type": "health_check_done", "count": len(results)})
+    if switched:
+        await broadcast({"type": "auto_failover", "profile_ids": switched})
     return [dataclasses.asdict(p) for p in results]
 
 
@@ -122,6 +136,23 @@ def create_profile(payload: ProfileIn):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return dataclasses.asdict(profile)
+
+
+@app.put("/api/profiles/{profile_id}")
+async def update_profile(profile_id: int, payload: ProfileUpdateIn):
+    try:
+        profile = manager.update_profile_settings(profile_id, **payload.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    await broadcast({"type": "profile_updated", "profile_id": profile_id})
+    return dataclasses.asdict(profile)
+
+
+@app.get("/api/processes")
+def list_processes():
+    from ..launcher import list_running_process_names
+
+    return {"processes": list_running_process_names()}
 
 
 @app.delete("/api/profiles/{profile_id}")
@@ -237,9 +268,15 @@ if STATIC_DIR.exists():
     app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+# Version asset dua theo thoi diem khoi dong server -> moi lan restart la cache bi bust,
+# UI luon cap nhat theo file moi nhat khi dev.
+_ASSET_VERSION = str(int(time.time()))
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
-        return index_file.read_text(encoding="utf-8")
+        html = index_file.read_text(encoding="utf-8")
+        return html.replace("__ASSET_VERSION__", _ASSET_VERSION)
     return "<h1>Proxy Manager</h1><p>static/index.html not found</p>"

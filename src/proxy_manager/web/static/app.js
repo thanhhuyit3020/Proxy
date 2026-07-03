@@ -99,6 +99,7 @@ async function refreshProfiles() {
         <button data-id="${p.id}" class="btn-icon stop-profile">Stop</button>
         <button data-id="${p.id}" class="btn-icon launch-profile">Mở app</button>
         <button data-id="${p.id}" class="btn-icon rotate-profile">Đổi IP</button>
+        <button data-id="${p.id}" class="btn-icon edit-profile">Sửa</button>
         <button data-id="${p.id}" class="btn-icon leak-test-profile">Leak Test</button>
         <button data-id="${p.id}" class="btn-icon danger del-profile">Xoá</button>
       </td>`;
@@ -125,12 +126,90 @@ async function refreshProfiles() {
       log(`Lỗi mở app profile ${id}: ${err.message}`);
     }
   });
+  bind(".edit-profile", (id) => openEditForm(filtered.find((p) => String(p.id) === String(id))));
   bind(".leak-test-profile", async (id) => {
     const result = await api(`/api/profiles/${id}/leak-test`, { method: "POST" });
     log(`Leak test profile ${id}: IP ${result.ip_leak_pass ? "PASS" : "FAIL"}, kill-switch ${result.kill_switch_pass ? "PASS" : "FAIL"}`);
   });
   bind(".del-profile", async (id) => { await api(`/api/profiles/${id}`, { method: "DELETE" }); refreshProfiles(); });
 }
+
+// ---------- Edit profile ----------
+const editForm = document.getElementById("profile-edit-form");
+const editError = document.getElementById("profile-edit-error");
+
+async function openEditForm(p) {
+  if (!p) return;
+  createForm.hidden = true;
+  editError.hidden = true;
+  document.getElementById("edit-profile-id").value = p.id;
+  document.getElementById("edit-profile-label").textContent = `#${p.id} — ${p.name}`;
+  document.getElementById("edit-profile-name").value = p.name;
+  document.getElementById("edit-profile-proxy-ids").value = p.proxy_ids.join(",");
+  document.getElementById("edit-auto-rotate").checked = p.auto_rotate_enabled;
+  document.getElementById("edit-auto-rotate-seconds").value = p.auto_rotate_seconds;
+  document.getElementById("edit-assigned-apps").value = (p.assigned_process_names || []).join(", ");
+  editForm.hidden = false;
+  await loadProcesses();
+}
+
+async function loadProcesses() {
+  const picker = document.getElementById("process-picker");
+  try {
+    const { processes } = await api("/api/processes");
+    picker.innerHTML = `<option value="">+ Thêm từ tiến trình đang chạy…</option>` +
+      processes.map((name) => `<option value="${name}">${name}</option>`).join("");
+  } catch {
+    picker.innerHTML = `<option value="">(không lấy được danh sách tiến trình)</option>`;
+  }
+}
+
+document.getElementById("process-picker").addEventListener("change", (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  const input = document.getElementById("edit-assigned-apps");
+  const current = input.value.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!current.includes(name)) current.push(name);
+  input.value = current.join(", ");
+  e.target.value = "";
+});
+
+document.getElementById("cancel-edit-profile").addEventListener("click", () => {
+  editForm.hidden = true;
+});
+
+editForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  editError.hidden = true;
+  const id = document.getElementById("edit-profile-id").value;
+  const proxyIds = document.getElementById("edit-profile-proxy-ids").value
+    .split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+  const apps = document.getElementById("edit-assigned-apps").value
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  const payload = {
+    name: document.getElementById("edit-profile-name").value.trim(),
+    proxy_ids: proxyIds,
+    assigned_process_names: apps,
+    auto_rotate_enabled: document.getElementById("edit-auto-rotate").checked,
+    auto_rotate_seconds: parseInt(document.getElementById("edit-auto-rotate-seconds").value, 10) || 600,
+  };
+  try {
+    await api(`/api/profiles/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    let msg = err.message;
+    try { msg = JSON.parse(err.message).detail || msg; } catch {}
+    editError.textContent = `Không lưu được: ${msg}`;
+    editError.hidden = false;
+    return;
+  }
+  log(`Đã cập nhật profile ${id}`);
+  editForm.hidden = true;
+  refreshProfiles();
+});
 
 async function loadBrowsers() {
   const select = document.getElementById("browser-select");
@@ -148,16 +227,39 @@ async function loadBrowsers() {
 
 document.getElementById("profile-search").addEventListener("input", () => refreshProfiles());
 
+const formError = document.getElementById("profile-form-error");
+
+function showFormError(msg) {
+  formError.textContent = msg;
+  formError.hidden = false;
+}
+
 createForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const name = document.getElementById("profile-name").value;
+  formError.hidden = true;
+  const name = document.getElementById("profile-name").value.trim();
   const proxyIds = document.getElementById("profile-proxy-ids").value
     .split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
-  await api("/api/profiles", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, proxy_ids: proxyIds }),
-  });
+
+  if (!proxyIds.length) {
+    showFormError("Nhập ít nhất 1 Proxy ID. Chưa có proxy? Vào 'Proxy Pool' import trước đã.");
+    return;
+  }
+
+  try {
+    await api("/api/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, proxy_ids: proxyIds }),
+    });
+  } catch (err) {
+    // Backend tra JSON {detail: "..."} khi 400 -> rut message cho de doc
+    let msg = err.message;
+    try { msg = JSON.parse(err.message).detail || msg; } catch {}
+    showFormError(`Không tạo được profile: ${msg}`);
+    return;
+  }
+
   log(`Đã tạo profile ${name}`);
   createForm.reset();
   createForm.hidden = true;
@@ -170,8 +272,9 @@ function connectWs() {
   ws.onmessage = (evt) => {
     const data = JSON.parse(evt.data);
     log(`Event: ${JSON.stringify(data)}`);
-    if (data.type.startsWith("profile") || data.type === "ip_rotated") refreshProfiles();
-    if (data.type === "health_check_done") refreshProxies();
+    if (data.type.startsWith("profile") || data.type === "ip_rotated" || data.type === "auto_failover") refreshProfiles();
+    if (data.type === "health_check_done") { refreshProxies(); refreshProfiles(); }
+    if (data.type === "auto_failover") log(`⚠ Tự chuyển proxy cho profile: ${(data.profile_ids || []).join(", ")} (proxy cũ chết)`);
   };
   ws.onclose = () => setTimeout(connectWs, 2000);
 }

@@ -87,3 +87,46 @@ def test_static_assets_served_with_no_cache(client):
     resp = client.get("/static/app.js")
     assert resp.status_code == 200
     assert "no-cache" in resp.headers.get("cache-control", "")
+
+
+def test_index_injects_asset_version(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    # placeholder phai duoc thay bang version that -> cache-busting hoat dong
+    assert "__ASSET_VERSION__" not in resp.text
+    assert "app.js?v=" in resp.text
+
+
+def test_update_profile_endpoint(client):
+    proxy_id = client.post("/api/proxies", json={
+        "scheme": "socks5", "host": "9.9.9.9", "port": 1080,
+    }).json()["id"]
+    profile_id = client.post("/api/profiles", json={"name": "p1", "proxy_ids": [proxy_id]}).json()["id"]
+
+    resp = client.put(f"/api/profiles/{profile_id}", json={
+        "name": "renamed", "auto_rotate_enabled": True, "auto_rotate_seconds": 90,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "renamed"
+    assert body["auto_rotate_enabled"] is True
+    assert body["auto_rotate_seconds"] == 90
+
+
+def test_update_profile_rejects_bad_rotate_interval(client):
+    proxy_id = client.post("/api/proxies", json={
+        "scheme": "socks5", "host": "9.9.9.9", "port": 1080,
+    }).json()["id"]
+    profile_id = client.post("/api/profiles", json={"name": "p1", "proxy_ids": [proxy_id]}).json()["id"]
+
+    resp = client.put(f"/api/profiles/{profile_id}", json={"auto_rotate_seconds": 5})
+    assert resp.status_code == 400
+
+
+def test_list_processes_endpoint(client):
+    resp = client.get("/api/processes")
+    assert resp.status_code == 200
+    procs = resp.json()["processes"]
+    assert isinstance(procs, list)
+    # Test process nay dang chay -> phai co it nhat 1 tien trinh
+    assert len(procs) > 0

@@ -11,7 +11,7 @@ import psutil
 from .db import Database
 from .gateway import ProfileGateway
 from .launcher import launch_browser
-from .models import Profile, ProfileStatus, Proxy
+from .models import Profile, ProfileStatus, Proxy, ProxyStatus
 
 logger = logging.getLogger("proxy_manager.profile_manager")
 
@@ -68,6 +68,58 @@ class ProfileManager:
             auto_rotate_seconds=auto_rotate_seconds,
         )
         profile.id = self.db.add_profile(profile)
+        return profile
+
+    def update_profile_settings(
+        self, profile_id: int, name: str | None = None, proxy_ids: list[int] | None = None,
+        assigned_process_names: list[str] | None = None,
+        auto_rotate_enabled: bool | None = None, auto_rotate_seconds: int | None = None,
+    ) -> Profile:
+        """Cap nhat cai dat profile. Chi doi cac truong duoc truyen (None = giu nguyen).
+        Local port khong doi (giu cong da cap). Neu proxy active bi go khoi pool moi
+        -> chon lai proxy dau tien trong danh sach moi."""
+        profile = self.db.get_profile(profile_id)
+        if profile is None:
+            raise ValueError("profile khong ton tai")
+
+        if name is not None:
+            name = name.strip()
+            if not name:
+                raise ValueError("ten profile khong duoc de trong")
+            profile.name = name
+
+        if proxy_ids is not None:
+            if not proxy_ids:
+                raise ValueError("profile can it nhat 1 proxy")
+            for pid in proxy_ids:
+                if self.db.get_proxy(pid) is None:
+                    raise ValueError(f"proxy id={pid} khong ton tai")
+            profile.proxy_ids = proxy_ids
+            if profile.active_proxy_id not in proxy_ids:
+                profile.active_proxy_id = proxy_ids[0]
+
+        if assigned_process_names is not None:
+            profile.assigned_process_names = assigned_process_names
+
+        if auto_rotate_seconds is not None:
+            if auto_rotate_seconds < 30:
+                raise ValueError("auto_rotate_seconds toi thieu 30 giay")
+            profile.auto_rotate_seconds = auto_rotate_seconds
+
+        if auto_rotate_enabled is not None:
+            profile.auto_rotate_enabled = auto_rotate_enabled
+
+        self.db.update_profile(profile)
+
+        # Neu dang chay va vua bat auto-rotate -> khoi dong task; neu tat -> huy task
+        if profile.status == ProfileStatus.RUNNING:
+            if profile.auto_rotate_enabled:
+                self._ensure_rotation_task(profile_id)
+            else:
+                task = self._rotate_tasks.pop(profile_id, None)
+                if task:
+                    task.cancel()
+
         return profile
 
     def delete_profile(self, profile_id: int) -> None:
@@ -188,3 +240,31 @@ class ProfileManager:
         alive = [pid for pid in pids if psutil.pid_exists(pid)]
         self._launched_pids[profile_id] = alive
         return len(alive)
+
+    # ---------- Auto-failover ----------
+    def failover_dead_proxies(self) -> list[int]:
+        """Voi moi profile co active proxy vua chet, tu chuyen sang proxy con song
+        trong pool cua profile. Tra ve danh sach profile_id da duoc chuyen.
+
+        Goi sau moi lan health check. Neu khong con proxy song nao -> giu nguyen
+        active_proxy_id (kill-switch se chan traffic, fail-closed, khong lo IP that)."""
+        switched = []
+        for profile in self.db.list_profiles():
+            active = (
+                self.db.get_proxy(profile.active_proxy_id)
+                if profile.active_proxy_id is not None else None
+            )
+            if active is not None and active.status != ProxyStatus.DEAD:
+                continue  # active van song -> khong can lam gi
+
+            live = [
+                pid for pid in profile.proxy_ids
+                if (px := self.db.get_proxy(pid)) is not None and px.status != ProxyStatus.DEAD
+            ]
+            if not live:
+                continue  # khong co proxy song -> kill-switch tu chan, khong fallback IP that
+
+            profile.active_proxy_id = live[0]
+            self.db.update_profile(profile)
+            switched.append(profile.id)
+        return switched

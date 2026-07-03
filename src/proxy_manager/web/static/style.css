@@ -138,12 +138,41 @@ body {
   display: flex;
   gap: 0.6rem;
   align-items: center;
+  flex-wrap: wrap;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.75rem;
   margin-bottom: 1rem;
 }
+
+.form-error {
+  color: var(--red);
+  font-size: 0.82rem;
+  font-weight: 500;
+  flex-basis: 100%;
+}
+
+/* ---------- Edit form ---------- */
+#profile-edit-form { flex-direction: column; align-items: stretch; gap: 0.75rem; }
+.edit-title { font-size: 0.95rem; color: var(--text); }
+.field-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.field-row > label:first-child {
+  width: 90px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.field-row input[type="text"], .field-row input[type="number"] {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+.field-row input[type="text"] { flex: 1; min-width: 180px; }
+.field-row input[type="number"] { width: 90px; }
+.switch-inline { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+.hint { color: var(--text-muted); font-size: 0.8rem; }
 
 /* ---------- Table card ---------- */
 .table-card {

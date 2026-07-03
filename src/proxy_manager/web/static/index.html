@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Proxy Manager</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=__ASSET_VERSION__">
 </head>
 <body>
 <div class="app">
@@ -46,6 +46,40 @@
         <input type="text" id="profile-proxy-ids" placeholder="Proxy IDs (vd: 1,2)" required />
         <button type="submit" class="btn btn-primary">Tạo</button>
         <button type="button" id="cancel-create-profile" class="btn btn-ghost">Huỷ</button>
+        <span id="profile-form-error" class="form-error" hidden></span>
+      </form>
+
+      <form id="profile-edit-form" class="inline-form" hidden>
+        <strong class="edit-title">Sửa profile <span id="edit-profile-label"></span></strong>
+        <input type="hidden" id="edit-profile-id" />
+        <div class="field-row">
+          <label>Tên</label>
+          <input type="text" id="edit-profile-name" placeholder="Tên profile" required />
+        </div>
+        <div class="field-row">
+          <label>Proxy IDs</label>
+          <input type="text" id="edit-profile-proxy-ids" placeholder="vd: 1,2" required />
+        </div>
+        <div class="field-row">
+          <label>Auto-rotate</label>
+          <label class="switch-inline">
+            <input type="checkbox" id="edit-auto-rotate" /> Bật tự đổi IP
+          </label>
+          <input type="number" id="edit-auto-rotate-seconds" min="30" step="30" value="600" title="Chu kỳ (giây)" />
+          <span class="hint">giây</span>
+        </div>
+        <div class="field-row">
+          <label>App gán</label>
+          <input type="text" id="edit-assigned-apps" placeholder="vd: chrome.exe, game.exe" />
+          <select id="process-picker" class="search-input" title="Chọn tiến trình đang chạy để thêm">
+            <option value="">+ Thêm từ tiến trình đang chạy…</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <button type="submit" class="btn btn-primary">Lưu</button>
+          <button type="button" id="cancel-edit-profile" class="btn btn-ghost">Huỷ</button>
+          <span id="profile-edit-error" class="form-error" hidden></span>
+        </div>
       </form>
 
       <div class="table-card">
@@ -109,6 +143,6 @@
   </main>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

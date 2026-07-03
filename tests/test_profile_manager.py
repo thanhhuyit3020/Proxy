@@ -102,6 +102,82 @@ async def test_start_then_stop_updates_status(db):
     assert stopped.status == ProfileStatus.STOPPED
 
 
+def test_update_profile_settings_changes_fields(db):
+    manager = ProfileManager(db)
+    proxy_a = _add_proxy(db, host="1.1.1.1")
+    proxy_b = _add_proxy(db, host="2.2.2.2")
+    profile = manager.create_profile(name="old", proxy_ids=[proxy_a])
+
+    updated = manager.update_profile_settings(
+        profile.id, name="new", proxy_ids=[proxy_a, proxy_b],
+        assigned_process_names=["chrome.exe"], auto_rotate_enabled=True, auto_rotate_seconds=120,
+    )
+    assert updated.name == "new"
+    assert updated.proxy_ids == [proxy_a, proxy_b]
+    assert updated.assigned_process_names == ["chrome.exe"]
+    assert updated.auto_rotate_enabled is True
+    assert updated.auto_rotate_seconds == 120
+
+
+def test_update_profile_settings_partial_keeps_others(db):
+    manager = ProfileManager(db)
+    proxy_id = _add_proxy(db)
+    profile = manager.create_profile(name="keep", proxy_ids=[proxy_id])
+    updated = manager.update_profile_settings(profile.id, auto_rotate_enabled=True)
+    assert updated.name == "keep"  # khong doi
+    assert updated.auto_rotate_enabled is True
+
+
+def test_update_profile_settings_rejects_unknown_proxy(db):
+    manager = ProfileManager(db)
+    proxy_id = _add_proxy(db)
+    profile = manager.create_profile(name="p", proxy_ids=[proxy_id])
+    with pytest.raises(ValueError):
+        manager.update_profile_settings(profile.id, proxy_ids=[999])
+
+
+def test_update_reselects_active_when_removed_from_pool(db):
+    manager = ProfileManager(db)
+    proxy_a = _add_proxy(db, host="1.1.1.1")
+    proxy_b = _add_proxy(db, host="2.2.2.2")
+    profile = manager.create_profile(name="p", proxy_ids=[proxy_a, proxy_b])
+    assert profile.active_proxy_id == proxy_a
+    # Bo proxy_a khoi pool -> active phai chuyen sang proxy con lai
+    updated = manager.update_profile_settings(profile.id, proxy_ids=[proxy_b])
+    assert updated.active_proxy_id == proxy_b
+
+
+def test_failover_switches_to_live_proxy_when_active_dead(db):
+    from proxy_manager.models import ProxyStatus
+
+    manager = ProfileManager(db)
+    dead = _add_proxy(db, host="1.1.1.1")
+    live = _add_proxy(db, host="2.2.2.2")
+    profile = manager.create_profile(name="p", proxy_ids=[dead, live])
+    assert profile.active_proxy_id == dead
+
+    db.update_proxy_health(dead, ProxyStatus.DEAD, None, None, 0)
+    db.update_proxy_health(live, ProxyStatus.ALIVE, 10, "2.2.2.2", 0)
+
+    switched = manager.failover_dead_proxies()
+    assert profile.id in switched
+    assert db.get_profile(profile.id).active_proxy_id == live
+
+
+def test_failover_keeps_active_when_no_live_proxy(db):
+    from proxy_manager.models import ProxyStatus
+
+    manager = ProfileManager(db)
+    p1 = _add_proxy(db, host="1.1.1.1")
+    profile = manager.create_profile(name="p", proxy_ids=[p1])
+    db.update_proxy_health(p1, ProxyStatus.DEAD, None, None, 0)
+
+    # Khong con proxy song -> giu nguyen active (kill-switch chan traffic, khong fallback IP that)
+    switched = manager.failover_dead_proxies()
+    assert profile.id not in switched
+    assert db.get_profile(profile.id).active_proxy_id == p1
+
+
 def test_launch_app_blocked_when_profile_stopped(db):
     manager = ProfileManager(db)
     proxy_id = _add_proxy(db)
