@@ -25,9 +25,12 @@ Da co (Giai doan 1):
 - Web dashboard (FastAPI + WebSocket) tai `http://127.0.0.1:8800`.
 
 Dang lam (Giai doan 2 — Layer B, xem thiet ke `docs/layer-b-design.md`):
-- **B1 (xong): WinDivert bring-up** — nap driver, bat goi outbound TCP + reinject nguyen trang,
-  master on/off. Self-test thu cong: xem muc "Layer B" ben duoi.
-- B2..B7 (chua lam): PID->profile, transparent redirect, kill-switch muc goi, IPv6/DNS, QUIC, dong goi.
+- **B1 (PASS tren may that): WinDivert bring-up** — nap driver, bat goi outbound TCP + reinject
+  nguyen trang, master on/off.
+- **B2 (xong, cho self-test): PID->profile mapping** — SOCKET layer (sniff-only) xay bang
+  local_port -> pid, doi chieu ten tien trinh voi assigned_process_names cua profile.
+- B3..B7 (chua lam): transparent redirect, kill-switch muc goi, IPv6/DNS, QUIC, dong goi.
+- Self-test thu cong tung buoc: xem muc "Layer B" ben duoi.
 
 Chua lam:
 - Chong DNS leak / IPv6 leak o tang he thong (B5).
@@ -49,6 +52,17 @@ Kiem chung B1 (bring-up) tren may that — mo terminal **Run as administrator** 
 
 Trong ~15 giay, mo trinh duyet vao mot trang web. PASS neu trang tai binh thuong VA
 `packets_seen > 0` (WinDivert bat duoc goi va reinject nguyen trang, khong lam dut ket noi).
+
+Kiem chung B2 (PID->profile mapping), cung mo terminal admin:
+
+```bash
+.venv\Scripts\python.exe -m proxy_manager.layerb.selftest_b2
+```
+
+Trong ~20 giay, mo trinh duyet vao mot trang web. Script in bang `local_port -> pid -> ten
+tien trinh`. Doi chieu PID trong bang voi Task Manager de xac nhan dung tien trinh. PASS neu
+`events_seen > 0` va it nhat 1 dong khop voi app vua mo.
+
 Layer B chi chay tren Windows co quyen admin; khi thieu, cac chuc nang Layer A van hoat dong binh thuong.
 
 ## Cai dat

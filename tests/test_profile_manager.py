@@ -178,6 +178,58 @@ def test_failover_keeps_active_when_no_live_proxy(db):
     assert db.get_profile(profile.id).active_proxy_id == p1
 
 
+def test_profile_for_pid_matches_assigned_process(db, monkeypatch):
+    import os
+
+    from proxy_manager import profile_manager as pm
+
+    manager = ProfileManager(db)
+    proxy_id = _add_proxy(db)
+    # Gan ten tien trinh chinh cua pytest (khong biet truoc, nen lay tu resolve_process_name that)
+    own_pid = os.getpid()
+    own_name = pm.resolve_process_name(own_pid)
+    manager.create_profile(name="p1", proxy_ids=[proxy_id],
+                            assigned_process_names=[own_name])
+
+    matched = manager.profile_for_pid(own_pid)
+    assert matched is not None
+    assert matched.name == "p1"
+
+
+def test_profile_for_pid_case_insensitive(db):
+    import os
+
+    from proxy_manager import profile_manager as pm
+
+    manager = ProfileManager(db)
+    proxy_id = _add_proxy(db)
+    own_pid = os.getpid()
+    own_name = pm.resolve_process_name(own_pid)
+    manager.create_profile(name="p1", proxy_ids=[proxy_id],
+                            assigned_process_names=[own_name.upper()])
+
+    assert manager.profile_for_pid(own_pid) is not None
+
+
+def test_profile_for_pid_returns_none_when_unassigned(db):
+    import os
+
+    manager = ProfileManager(db)
+    proxy_id = _add_proxy(db)
+    manager.create_profile(name="p1", proxy_ids=[proxy_id],
+                            assigned_process_names=["definitely-not-this-process.exe"])
+
+    assert manager.profile_for_pid(os.getpid()) is None
+
+
+def test_profile_for_pid_returns_none_for_invalid_pid(db):
+    manager = ProfileManager(db)
+    proxy_id = _add_proxy(db)
+    manager.create_profile(name="p1", proxy_ids=[proxy_id], assigned_process_names=["chrome.exe"])
+
+    assert manager.profile_for_pid(999_999_999) is None
+
+
 def test_launch_app_blocked_when_profile_stopped(db):
     manager = ProfileManager(db)
     proxy_id = _add_proxy(db)

@@ -6,7 +6,9 @@
 > **Quyết định đã chốt (03-07-2026):**
 > - App mục tiêu **chủ yếu TCP** → B6 (UDP/SOCKS5 UDP-associate) HOÃN; v1 chặn QUIC ép về TCP.
 > - **Chấp nhận chạy as Administrator** + nạp WinDivert driver (UAC elevation khi bật Layer B).
-> - Triển khai **cuốn chiếu B1→B7**, checkpoint sau mỗi bước. Đang ở: **B1 (bring-up)**.
+> - Triển khai **cuốn chiếu B1→B7**, checkpoint sau mỗi bước.
+> - **B1 (bring-up): PASS trên máy thật** (03-07-2026, packets_seen=308, web tải bình thường).
+> - Đang ở: **B2 (PID→profile mapping)** — code xong, chờ self-test B2 trên máy thật.
 
 ## 1. Mục tiêu
 Ép các app **không hỗ trợ cấu hình proxy** (game client, tool bất kỳ) đi ra Internet qua

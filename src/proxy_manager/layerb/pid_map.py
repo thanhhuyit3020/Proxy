@@ -1,0 +1,138 @@
+"""B2 — PID -> profile mapping.
+
+Handle A (thiet ke o docs/layer-b-design.md muc 3): WinDivert SOCKET layer, sniff-only,
+nhan su kien CONNECT/BIND kem PID + local_port ngay khi app mo ket noi. Ket qua duoc
+luu vao bang trong bo nho (local_port -> pid) de Handle B (NETWORK layer, redirect o B3)
+tra cuu goi thuoc tien trinh nao.
+
+psutil.net_connections() duoc dung lam fallback/doi chieu (tuong duong GetExtendedTcpTable
+nhac toi trong thiet ke) cho cac ket noi da mo TRUOC khi watcher bat dau."""
+from __future__ import annotations
+
+import logging
+import threading
+import time
+
+import psutil
+
+logger = logging.getLogger("proxy_manager.layerb.pid_map")
+
+try:
+    import pydivert
+    _PYDIVERT_AVAILABLE = True
+except Exception:  # noqa: BLE001 - import-guard, dong bo voi driver.py
+    pydivert = None
+    _PYDIVERT_AVAILABLE = False
+
+
+def pydivert_available() -> bool:
+    return _PYDIVERT_AVAILABLE
+
+
+SOCKET_LAYER_FILTER = "outbound and tcp"
+
+# Bang entry het han sau khoang thoi gian nay neu khong duoc lam moi -- tranh phinh bo
+# nho vo han cho cac ket noi da dong ma khong co su kien dong tuong ung o SOCKET layer.
+DEFAULT_ENTRY_TTL_SECONDS = 300
+
+
+def resolve_process_name(pid: int) -> str | None:
+    """Tra ve ten tien trinh (vd 'chrome.exe') tu PID, hoac None neu tien trinh khong
+    con ton tai hoac khong co quyen truy cap."""
+    try:
+        return psutil.Process(pid).name()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return None
+
+
+def lookup_pid_by_port(local_port: int) -> int | None:
+    """Fallback: tra PID theo local_port qua psutil.net_connections (tuong duong
+    GetExtendedTcpTable). Dung cho ket noi da mo truoc khi PidWatcher bat dau,
+    hoac khi WinDivert SOCKET layer khong san sang."""
+    try:
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.laddr and conn.laddr.port == local_port and conn.pid:
+                return conn.pid
+    except (psutil.AccessDenied, PermissionError):
+        return None
+    return None
+
+
+class PidWatcher:
+    """B2: theo doi su kien CONNECT o SOCKET layer, xay bang local_port -> pid.
+
+    Sniff-only (khong sua/chan goi nao) -- an toan chay song song voi B1 passthrough
+    hoac Layer A gateway ma khong anh huong traffic that."""
+
+    def __init__(self, entry_ttl_seconds: int = DEFAULT_ENTRY_TTL_SECONDS):
+        if not _PYDIVERT_AVAILABLE:
+            raise RuntimeError(
+                "pydivert/WinDivert khong san sang (can Windows + admin + driver). "
+                "Khong the khoi dong PidWatcher tren may nay."
+            )
+        self.entry_ttl_seconds = entry_ttl_seconds
+        self._handle = None
+        self._thread: threading.Thread | None = None
+        self._running = False
+        self._lock = threading.Lock()
+        self._table: dict[int, tuple[int, float]] = {}  # local_port -> (pid, last_seen)
+        self.events_seen = 0
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._handle = pydivert.WinDivert(
+            SOCKET_LAYER_FILTER,
+            layer=pydivert.Layer.SOCKET,
+            flags=pydivert.Flag.SNIFF | pydivert.Flag.RECV_ONLY,
+        )
+        self._handle.open()
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, name="layerb-b2-pidmap", daemon=True)
+        self._thread.start()
+        logger.info("Layer B B2 PidWatcher started (filter=%s)", SOCKET_LAYER_FILTER)
+
+    def _loop(self) -> None:
+        while self._running:
+            try:
+                event = self._handle.recv()
+            except Exception:  # noqa: BLE001 - handle dong khi stop() -> thoat vong lap
+                break
+            self.events_seen += 1
+            addr = getattr(event, "address", event)  # SOCKET layer: co the la address truc tiep
+            pid = getattr(addr, "process_id", None)
+            local_port = getattr(addr, "local_port", None)
+            if pid is None or local_port is None:
+                continue
+            with self._lock:
+                self._table[local_port] = (pid, time.monotonic())
+
+    def stop(self) -> None:
+        self._running = False
+        if self._handle is not None:
+            try:
+                self._handle.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._handle = None
+        logger.info("Layer B B2 PidWatcher stopped (events_seen=%s)", self.events_seen)
+
+    @property
+    def running(self) -> bool:
+        return self._running
+
+    def pid_for_port(self, local_port: int) -> int | None:
+        """Tra cuu PID theo local_port: uu tien bang song (SOCKET layer), fallback
+        sang psutil neu ket noi da mo truoc khi watcher bat dau hoac entry da het han."""
+        with self._lock:
+            entry = self._table.get(local_port)
+            if entry is not None:
+                pid, last_seen = entry
+                if time.monotonic() - last_seen <= self.entry_ttl_seconds:
+                    return pid
+        return lookup_pid_by_port(local_port)
+
+    def snapshot(self) -> dict[int, int]:
+        """Ban sao bang hien tai (local_port -> pid), khong loc TTL -- dung de debug/hien thi."""
+        with self._lock:
+            return {port: pid for port, (pid, _) in self._table.items()}

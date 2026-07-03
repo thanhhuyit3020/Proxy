@@ -11,6 +11,7 @@ import psutil
 from .db import Database
 from .gateway import ProfileGateway
 from .launcher import launch_browser
+from .layerb.pid_map import resolve_process_name
 from .models import Profile, ProfileStatus, Proxy, ProxyStatus
 
 logger = logging.getLogger("proxy_manager.profile_manager")
@@ -268,3 +269,18 @@ class ProfileManager:
             self.db.update_profile(profile)
             switched.append(profile.id)
         return switched
+
+    # ---------- Layer B: PID -> profile mapping (B2) ----------
+    def profile_for_pid(self, pid: int) -> Profile | None:
+        """Tra ten tien trinh tu PID, doi chieu voi assigned_process_names cua tung
+        profile (khong phan biet hoa/thuong). Tra ve profile dau tien khop, hoac None
+        neu PID khong thuoc app nao duoc gan. Dung boi Handle B (redirector, B3) de
+        quyet dinh goi cua tien trinh nay co bi ep dinh tuyen hay khong."""
+        name = resolve_process_name(pid)
+        if name is None:
+            return None
+        name_lower = name.lower()
+        for profile in self.db.list_profiles():
+            if any(name_lower == assigned.lower() for assigned in profile.assigned_process_names):
+                return profile
+        return None
