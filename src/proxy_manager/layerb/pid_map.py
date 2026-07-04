@@ -95,13 +95,18 @@ class PidWatcher:
     def _loop(self) -> None:
         while self._running:
             try:
-                event = self._handle.recv()
+                packet = self._handle.recv()
             except Exception:  # noqa: BLE001 - handle dong khi stop() -> thoat vong lap
                 break
             self.events_seen += 1
-            addr = getattr(event, "address", event)  # SOCKET layer: co the la address truc tiep
-            pid = getattr(addr, "process_id", None)
-            local_port = getattr(addr, "local_port", None)
+            # pydivert: Packet.socket la ctypes struct WINDIVERT_ADDRESS.Socket khi
+            # layer=SOCKET, voi field PascalCase (ProcessId, LocalPort...) -- khong
+            # phai property tien loi kieu snake_case.
+            sock = getattr(packet, "socket", None)
+            if sock is None:
+                continue
+            pid = getattr(sock, "ProcessId", None)
+            local_port = getattr(sock, "LocalPort", None)
             if pid is None or local_port is None:
                 continue
             with self._lock:

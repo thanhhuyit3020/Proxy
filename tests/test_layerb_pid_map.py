@@ -32,15 +32,19 @@ def test_pid_watcher_raises_when_pydivert_unavailable(monkeypatch):
         PidWatcher()
 
 
-class _FakeAddress:
+class _FakeSocket:
+    """Mo phong ctypes struct WINDIVERT_ADDRESS.Socket (field PascalCase that)."""
+
     def __init__(self, process_id, local_port):
-        self.process_id = process_id
-        self.local_port = local_port
+        self.ProcessId = process_id
+        self.LocalPort = local_port
 
 
 class _FakeEvent:
+    """Mo phong pydivert.Packet: co property .socket (khong phai .address)."""
+
     def __init__(self, process_id, local_port):
-        self.address = _FakeAddress(process_id, local_port)
+        self.socket = _FakeSocket(process_id, local_port)
 
 
 class _FakeSocketHandle:
