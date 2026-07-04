@@ -10,12 +10,23 @@ nhac toi trong thiet ke) cho cac ket noi da mo TRUOC khi watcher bat dau."""
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 
 import psutil
 
 logger = logging.getLogger("proxy_manager.layerb.pid_map")
+
+# Cung bien voi redirector.py -- bat de chan doan khi vong lap watcher chet som
+# ma khong ro nguyen nhan (vd xung dot khi mo dong thoi voi Handle B NETWORK layer).
+_DEBUG = os.environ.get("PROXY_MANAGER_LAYERB_DEBUG") == "1"
+
+
+def _dbg(*args) -> None:
+    if _DEBUG:
+        print("[pid_map debug]", *args, flush=True)
+
 
 try:
     import pydivert
@@ -96,7 +107,10 @@ class PidWatcher:
         while self._running:
             try:
                 packet = self._handle.recv()
-            except Exception:  # noqa: BLE001 - handle dong khi stop() -> thoat vong lap
+            except Exception as exc:  # noqa: BLE001 - handle dong khi stop() -> thoat vong lap
+                if self._running:
+                    _dbg(f"recv() loi bat ngo, vong lap PidWatcher DUNG SOM: {exc!r}")
+                    logger.warning("Layer B B2 PidWatcher: recv() loi, dung vong lap: %r", exc)
                 break
             self.events_seen += 1
             # pydivert: Packet.socket la ctypes struct WINDIVERT_ADDRESS.Socket khi
@@ -111,6 +125,7 @@ class PidWatcher:
                 continue
             with self._lock:
                 self._table[local_port] = (pid, time.monotonic())
+            _dbg(f"table[{local_port}] = pid {pid}")
 
     def stop(self) -> None:
         self._running = False
@@ -142,13 +157,16 @@ class PidWatcher:
         qua self-test B3 thuc te: kill-switch bi bo qua o lan goi curl.exe thu 2."""
         pid = lookup_pid_by_port(local_port)
         if pid is not None:
+            _dbg(f"pid_for_port({local_port}) = {pid} (nguon: psutil)")
             return pid
         with self._lock:
             entry = self._table.get(local_port)
         if entry is not None:
             pid, last_seen = entry
             if time.monotonic() - last_seen <= self.entry_ttl_seconds:
+                _dbg(f"pid_for_port({local_port}) = {pid} (nguon: bang song SOCKET layer)")
                 return pid
+        _dbg(f"pid_for_port({local_port}) = None (khong tim thay o ca 2 nguon)")
         return None
 
     def snapshot(self) -> dict[int, int]:

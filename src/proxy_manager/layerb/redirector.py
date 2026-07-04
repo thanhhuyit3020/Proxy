@@ -139,7 +139,12 @@ class Redirector:
         while self._running:
             try:
                 packet = self._handle.recv()
-            except Exception:  # noqa: BLE001 - handle dong khi stop() -> thoat vong lap
+            except Exception as exc:  # noqa: BLE001 - handle dong khi stop() -> thoat vong lap
+                if self._running:
+                    # self._running van True nghia la day KHONG phai do stop() dong handle
+                    # chu dong -- day la loi that su lam vong lap chet som, phai bao ro.
+                    _dbg(f"recv() loi bat ngo, vong lap redirector DUNG SOM: {exc!r}")
+                    logger.warning("Layer B B3 redirector: recv() loi, dung vong lap: %r", exc)
                 break
             self.packets_seen += 1
             try:
