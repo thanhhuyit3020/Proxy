@@ -23,6 +23,17 @@ from ..models import ProfileStatus, ProxyStatus
 
 logger = logging.getLogger("proxy_manager.layerb.redirector")
 
+# Bat bang PROXY_MANAGER_LAYERB_DEBUG=1 -- in ra tung buoc quyet dinh cua
+# _handle_packet (pid/profile resolve, proxy alive, nhanh nao duoc chon) de
+# chan doan khi hanh vi thuc te tren may khong khop du kien.
+_DEBUG = os.environ.get("PROXY_MANAGER_LAYERB_DEBUG") == "1"
+
+
+def _dbg(*args) -> None:
+    if _DEBUG:
+        print("[redirector debug]", *args, flush=True)
+
+
 try:
     import pydivert
     _PYDIVERT_AVAILABLE = True
@@ -138,10 +149,15 @@ class Redirector:
                 self._reinject(packet)
 
     def _handle_packet(self, packet) -> None:
+        _dbg(f"packet src={packet.src_addr}:{packet.src_port} dst={packet.dst_addr}:{packet.dst_port} "
+             f"loopback={packet.loopback}")
+
         # Case B: goi tra loi tu gateway (src la 1 trong cac cong gwport dang chay,
         # tren duong loopback) -> ghi de src ve dich that de app khong biet bi chuyen huong.
-        if packet.loopback and packet.src_port in self._running_gateway_ports():
+        gw_ports = self._running_gateway_ports()
+        if packet.loopback and packet.src_port in gw_ports:
             orig = self.orig_dest.lookup(packet.dst_port)
+            _dbg(f"case B: src_port {packet.src_port} la gwport, dst_port {packet.dst_port} -> orig_dest={orig}")
             if orig is not None:
                 packet.src_addr, packet.src_port = orig[0], orig[1]
                 packet.recalculate_checksums()
@@ -151,11 +167,13 @@ class Redirector:
 
         # Case A: goi outbound cua app -> kiem tra PID co thuoc profile duoc gan khong.
         pid = self._pid_watcher.pid_for_port(packet.src_port)
+        _dbg(f"case A: pid_for_port({packet.src_port}) = {pid} (own_pid={self._own_pid})")
         if pid is None or pid == self._own_pid:
             self._reinject(packet)  # khong xac dinh duoc PID hoac la chinh minh -> bo qua
             return
 
         profile = self._profile_manager.profile_for_pid(pid)
+        _dbg(f"profile_for_pid({pid}) = {profile.name if profile else None}")
         if profile is None:
             self._reinject(packet)  # PID khong thuoc app nao duoc gan -> bo qua
             return
@@ -165,17 +183,21 @@ class Redirector:
             if profile.active_proxy_id is not None else None
         )
         proxy_alive = active_proxy is not None and active_proxy.status != ProxyStatus.DEAD
+        _dbg(f"profile.status={profile.status} active_proxy.status={active_proxy.status if active_proxy else None} "
+             f"proxy_alive={proxy_alive}")
 
         if profile.status != ProfileStatus.RUNNING or not proxy_alive:
             # Kill-switch fail-closed: app duoc gan nhung khong co gateway/proxy song
             # -> DROP, tuyet doi khong cho goi ra mang that (khong reinject).
             self.packets_dropped += 1
+            _dbg("-> DROP (kill-switch)")
             return
 
         self.orig_dest.record(packet.src_port, packet.dst_addr, packet.dst_port)
         packet.dst_addr = "127.0.0.1"
         packet.dst_port = profile.local_port
         packet.recalculate_checksums()
+        _dbg(f"-> REDIRECT to 127.0.0.1:{profile.local_port}")
         self.packets_redirected += 1
         self._reinject(packet)
 
