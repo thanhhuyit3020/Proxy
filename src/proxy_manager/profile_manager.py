@@ -11,7 +11,8 @@ import psutil
 from .db import Database
 from .gateway import ProfileGateway
 from .launcher import launch_browser
-from .layerb.pid_map import resolve_process_name
+from .layerb.pid_map import PidWatcher, resolve_process_name
+from .layerb.redirector import OriginalDestTable, Redirector
 from .models import Profile, ProfileStatus, Proxy, ProxyStatus
 
 logger = logging.getLogger("proxy_manager.profile_manager")
@@ -22,10 +23,18 @@ PORT_RANGE = range(20000, 20999)
 class ProfileManager:
     def __init__(self, db: Database):
         self.db = db
+        # Bang dung chung cho toan bo profile: Redirector (Layer B, B3) ghi, moi
+        # ProfileGateway doc qua side-channel de biet dich that khi bi dinh tuyen
+        # trong suot. Rong/vo hai neu Layer B khong duoc bat.
+        self.orig_dest_table = OriginalDestTable()
         self._gateways: dict[int, ProfileGateway] = {}
         self._rotate_tasks: dict[int, asyncio.Task] = {}
         # PID cac tien trinh (trinh duyet) da mo cho tung profile
         self._launched_pids: dict[int, list[int]] = {}
+        # Layer B (B2+B3): mot cap PidWatcher/Redirector dung chung cho toan bo profile,
+        # vi WinDivert bat outbound TCP toan he thong, khong scope duoc theo tung profile.
+        self._pid_watcher: PidWatcher | None = None
+        self._redirector: Redirector | None = None
 
     # ---------- Port allocation ----------
     def _pick_free_port(self) -> int:
@@ -156,6 +165,7 @@ class ProfileManager:
             gateway = ProfileGateway(
                 profile_id, profile.local_port,
                 get_active_proxy=lambda pid=profile_id: self._get_active_proxy(pid),
+                orig_dest_lookup=self.orig_dest_table.lookup,
             )
             self._gateways[profile_id] = gateway
 
@@ -284,3 +294,28 @@ class ProfileManager:
             if any(name_lower == assigned.lower() for assigned in profile.assigned_process_names):
                 return profile
         return None
+
+    # ---------- Layer B: transparent redirect (B3) ----------
+    def start_layer_b(self) -> None:
+        """Bat Layer B (B2 PID-mapping + B3 redirect) cho toan bo profile. Mot cap
+        PidWatcher/Redirector dung chung -- WinDivert bat outbound TCP toan he thong,
+        khong the mo rieng theo tung profile. Can Windows + admin + WinDivert driver
+        (xem docs/layer-b-design.md); neu thieu se raise RuntimeError ro rang."""
+        if self._redirector is not None:
+            return
+        self._pid_watcher = PidWatcher()
+        self._pid_watcher.start()
+        self._redirector = Redirector(self._pid_watcher, self, self.orig_dest_table)
+        self._redirector.start()
+
+    def stop_layer_b(self) -> None:
+        if self._redirector is not None:
+            self._redirector.stop()
+            self._redirector = None
+        if self._pid_watcher is not None:
+            self._pid_watcher.stop()
+            self._pid_watcher = None
+
+    @property
+    def layer_b_running(self) -> bool:
+        return self._redirector is not None and self._redirector.running

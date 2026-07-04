@@ -13,6 +13,7 @@ from .upstream import open_via_upstream
 logger = logging.getLogger("proxy_manager.gateway")
 
 GetActiveProxy = Callable[[], Awaitable[Proxy | None]]
+OrigDestLookup = Callable[[int], "tuple[str, int] | None"]
 
 
 class GatewayError(Exception):
@@ -22,10 +23,16 @@ class GatewayError(Exception):
 class ProfileGateway:
     """Mot instance gan voi 1 profile: lang nghe tren 127.0.0.1:local_port."""
 
-    def __init__(self, profile_id: int, local_port: int, get_active_proxy: GetActiveProxy):
+    def __init__(
+        self, profile_id: int, local_port: int, get_active_proxy: GetActiveProxy,
+        orig_dest_lookup: OrigDestLookup | None = None,
+    ):
         self.profile_id = profile_id
         self.local_port = local_port
         self._get_active_proxy = get_active_proxy
+        # Layer B (B3): tra dich goc theo peer port khi ket noi den la do WinDivert
+        # dinh tuyen trong suot (app khong gui SOCKS5/HTTP framing). None = chi Layer A.
+        self._orig_dest_lookup = orig_dest_lookup
         self._server: asyncio.base_events.Server | None = None
         self.active_connections = 0
 
@@ -46,6 +53,21 @@ class ProfileGateway:
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self.active_connections += 1
+
+        if self._orig_dest_lookup is not None:
+            peer = writer.get_extra_info("peername")
+            peer_port = peer[1] if peer else None
+            orig = self._orig_dest_lookup(peer_port) if peer_port is not None else None
+            if orig is not None:
+                try:
+                    await self._serve_transparent(reader, writer, orig[0], orig[1])
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("profile=%s transparent connection error: %s", self.profile_id, exc)
+                finally:
+                    self.active_connections -= 1
+                    writer.close()
+                return
+
         try:
             first_byte = await reader.readexactly(1)
         except (asyncio.IncompleteReadError, ConnectionResetError):
@@ -63,6 +85,21 @@ class ProfileGateway:
         finally:
             self.active_connections -= 1
             writer.close()
+
+    # ---------- Layer B transparent mode (B3): ket noi den khong co framing SOCKS5/HTTP ----------
+    async def _serve_transparent(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, dest_host: str, dest_port: int
+    ) -> None:
+        """App bi WinDivert dinh tuyen trong suot ve day, dich that lay tu side-channel
+        (Redirector.orig_dest, B3). Khong co byte framing nao de doc -- relay thang."""
+        proxy = await self._get_active_proxy()
+        if proxy is None:
+            return  # kill-switch: khong co proxy -> dong ket noi, khong forward goi nao
+        try:
+            up_reader, up_writer = await open_via_upstream(proxy, dest_host, dest_port)
+        except Exception:
+            return
+        await _relay(reader, writer, up_reader, up_writer)
 
     # ---------- SOCKS5 server side (client -> gateway) ----------
     async def _serve_socks5(

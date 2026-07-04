@@ -27,9 +27,13 @@ Da co (Giai doan 1):
 Dang lam (Giai doan 2 — Layer B, xem thiet ke `docs/layer-b-design.md`):
 - **B1 (PASS tren may that): WinDivert bring-up** — nap driver, bat goi outbound TCP + reinject
   nguyen trang, master on/off.
-- **B2 (xong, cho self-test): PID->profile mapping** — SOCKET layer (sniff-only) xay bang
+- **B2 (PASS tren may that): PID->profile mapping** — SOCKET layer (sniff-only) xay bang
   local_port -> pid, doi chieu ten tien trinh voi assigned_process_names cua profile.
-- B3..B7 (chua lam): transparent redirect, kill-switch muc goi, IPv6/DNS, QUIC, dong goi.
+- **B3 (xong, cho self-test): transparent redirect** — Redirector (NETWORK layer) ghi de
+  dich outbound cua app duoc gan ve gateway, ghi de nguoc src cho goi tra loi tren duong
+  loopback; gateway them "transparent mode" tra dich goc qua side-channel; kill-switch
+  fail-closed o muc goi (DROP, khong reinject) khi khong co proxy song.
+- B4..B7 (chua lam): kill-switch/self-exclude cung co them, IPv6/DNS, QUIC, dong goi.
 - Self-test thu cong tung buoc: xem muc "Layer B" ben duoi.
 
 Chua lam:
@@ -63,6 +67,18 @@ Trong ~20 giay, mo trinh duyet vao mot trang web. Script in bang `local_port -> 
 tien trinh`. Doi chieu PID trong bang voi Task Manager de xac nhan dung tien trinh. PASS neu
 `events_seen > 0` va it nhat 1 dong khop voi app vua mo.
 
+Kiem chung B3 (transparent redirect) — end-to-end voi mot proxy that va `curl.exe` (mo
+phong app khong ho tro proxy setting), cung mo terminal admin:
+
+```bash
+.venv\Scripts\python.exe -m proxy_manager.layerb.selftest_b3 socks5://user:pass@1.2.3.4:1080
+```
+
+Script tu tao profile tam gan `curl.exe`, bat Layer B, chay `curl.exe` KHONG dung flag
+`--proxy` nao (nhu mot app that khong biet gi ve proxy), roi so IP nhan duoc voi IP that
+cua proxy. Sau do danh dau proxy chet va chay lai curl de kiem tra kill-switch (curl phai
+KHONG lay duoc IP nao, khong duoc fallback ra IP that cua may). PASS neu ca hai deu dung.
+
 Layer B chi chay tren Windows co quyen admin; khi thieu, cac chuc nang Layer A van hoat dong binh thuong.
 
 ## Cai dat
@@ -81,14 +97,17 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Bo test hien co (70 test case): parse proxy list, SQLite CRUD, SOCKS5/HTTP CONNECT client
+Bo test hien co (101 test case): parse proxy list, SQLite CRUD, SOCKS5/HTTP CONNECT client
 handshake (mock stream, khong can proxy that), profile manager (cap phat cong, rotate, sua profile
-partial-update, auto-failover khi proxy chet, guard xoa khi dang chay, guard launch khi chua Start),
-process launcher (build lenh Chromium voi socks5 + user-data-dir co lap, mock subprocess), leak-test
-export CSV/JSON, end-to-end kill-switch fail-closed (gateway tu choi ket noi khi khong co proxy
-active -- dam bao khong bao gio fallback ra IP that), va smoke test FastAPI dashboard (edit profile,
-process picker endpoint; dung DB tam qua bien moi truong `PROXY_MANAGER_DB_PATH`, khong dung vao
-`~/.proxy_manager` that).
+partial-update, auto-failover khi proxy chet, guard xoa khi dang chay, guard launch khi chua Start,
+lifecycle bat/tat Layer B), process launcher (build lenh Chromium voi socks5 + user-data-dir co
+lap, mock subprocess), leak-test export CSV/JSON, end-to-end kill-switch fail-closed (Layer A +
+Layer B deu tu choi/DROP khi khong co proxy active -- dam bao khong bao gio fallback ra IP that),
+smoke test FastAPI dashboard (edit profile, process picker endpoint; dung DB tam qua bien moi
+truong `PROXY_MANAGER_DB_PATH`, khong dung vao `~/.proxy_manager` that), va Layer B B1/B2/B3
+(filter builder, PID-mapping tu SOCKET-layer event gia lap, redirect/restore/drop logic cua
+Redirector voi packet gia lap -- khong can driver that, xem muc "Layer B" de self-test tren
+may that voi driver that).
 
 ## Dong goi EXE (PyInstaller)
 

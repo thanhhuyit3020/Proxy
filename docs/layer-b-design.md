@@ -8,7 +8,9 @@
 > - **Chấp nhận chạy as Administrator** + nạp WinDivert driver (UAC elevation khi bật Layer B).
 > - Triển khai **cuốn chiếu B1→B7**, checkpoint sau mỗi bước.
 > - **B1 (bring-up): PASS trên máy thật** (03-07-2026, packets_seen=308, web tải bình thường).
-> - Đang ở: **B2 (PID→profile mapping)** — code xong, chờ self-test B2 trên máy thật.
+> - **B2 (PID→profile mapping): PASS trên máy thật** (03-07-2026, events_seen=42, 11 entry PID/tên khớp Task Manager).
+> - Đang ở: **B3 (transparent redirect)** — code xong (Redirector NETWORK-layer + gateway
+>   transparent mode + `selftest_b3.py` end-to-end với proxy thật + curl.exe), chờ self-test.
 
 ## 1. Mục tiêu
 Ép các app **không hỗ trợ cấu hình proxy** (game client, tool bất kỳ) đi ra Internet qua

@@ -230,6 +230,92 @@ def test_profile_for_pid_returns_none_for_invalid_pid(db):
     assert manager.profile_for_pid(999_999_999) is None
 
 
+def test_start_stop_layer_b_lifecycle(db, monkeypatch):
+    from proxy_manager import profile_manager as pm
+
+    class _FakePidWatcher:
+        def __init__(self):
+            self.started = False
+            self.stopped = False
+
+        def start(self):
+            self.started = True
+
+        def stop(self):
+            self.stopped = True
+
+    class _FakeRedirector:
+        def __init__(self, pid_watcher, profile_manager, orig_dest_table):
+            self.started = False
+            self.stopped = False
+            self._running = False
+
+        def start(self):
+            self.started = True
+            self._running = True
+
+        def stop(self):
+            self.stopped = True
+            self._running = False
+
+        @property
+        def running(self):
+            return self._running
+
+    monkeypatch.setattr(pm, "PidWatcher", _FakePidWatcher)
+    monkeypatch.setattr(pm, "Redirector", _FakeRedirector)
+
+    manager = ProfileManager(db)
+    assert manager.layer_b_running is False
+
+    manager.start_layer_b()
+    assert manager.layer_b_running is True
+    assert manager._pid_watcher.started is True
+    assert manager._redirector.started is True
+
+    manager.stop_layer_b()
+    assert manager.layer_b_running is False
+    assert manager._pid_watcher is None
+    assert manager._redirector is None
+
+
+def test_start_layer_b_idempotent(db, monkeypatch):
+    from proxy_manager import profile_manager as pm
+
+    calls = {"count": 0}
+
+    class _FakePidWatcher:
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    class _FakeRedirector:
+        def __init__(self, *a, **k):
+            calls["count"] += 1
+            self._running = True
+
+        def start(self):
+            pass
+
+        def stop(self):
+            self._running = False
+
+        @property
+        def running(self):
+            return self._running
+
+    monkeypatch.setattr(pm, "PidWatcher", _FakePidWatcher)
+    monkeypatch.setattr(pm, "Redirector", _FakeRedirector)
+
+    manager = ProfileManager(db)
+    manager.start_layer_b()
+    manager.start_layer_b()  # goi lan 2 -- khong duoc tao them Redirector moi
+
+    assert calls["count"] == 1
+
+
 def test_launch_app_blocked_when_profile_stopped(db):
     manager = ProfileManager(db)
     proxy_id = _add_proxy(db)
