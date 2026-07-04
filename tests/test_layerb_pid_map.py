@@ -108,3 +108,32 @@ def test_pid_watcher_pid_for_port_falls_back_when_missing(monkeypatch):
 
     monkeypatch.setattr(pid_map, "lookup_pid_by_port", lambda port: 9999)
     assert watcher.pid_for_port(1) == 9999
+
+
+def test_pid_for_port_prefers_psutil_over_stale_table_entry(monkeypatch):
+    """Regression: phat hien qua self-test B3 tren may that. Cong ephemeral bi tai
+    su dung boi 2 tien trinh khac nhau lien tiep (vd 2 lan goi curl.exe) -- bang
+    song (SOCKET layer) van con giu PID CU (da thoat) cho cong do. Neu uu tien bang
+    song, profile_for_pid() se resolve ra None (PID cu khong con ton tai) -> Redirector
+    coi goi la "khong quan ly" -> bo qua ca redirect lan kill-switch -> LO IP THAT.
+    psutil (ground truth NGAY LUC NAY) phai duoc uu tien de tra ve PID hien tai dung."""
+    class _FakePydivert:
+        WinDivert = _FakeSocketHandle
+        Layer = type("Layer", (), {"SOCKET": "SOCKET"})
+        Flag = type("Flag", (), {"SNIFF": 1, "RECV_ONLY": 2})
+
+    monkeypatch.setattr(pid_map, "_PYDIVERT_AVAILABLE", True)
+    monkeypatch.setattr(pid_map, "pydivert", _FakePydivert)
+
+    watcher = PidWatcher()
+    watcher.start()
+    deadline = time.monotonic() + 2
+    while watcher.events_seen < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    watcher.stop()
+
+    # 55000 -> PID 1234 (da thoat) trong bang song (tu _FakeSocketHandle);
+    # psutil (ground truth) bao cong 55000 bay gio thuoc PID 7777 (tien trinh moi).
+    monkeypatch.setattr(pid_map, "lookup_pid_by_port", lambda port: 7777 if port == 55000 else None)
+
+    assert watcher.pid_for_port(55000) == 7777

@@ -9,8 +9,13 @@
 > - Triển khai **cuốn chiếu B1→B7**, checkpoint sau mỗi bước.
 > - **B1 (bring-up): PASS trên máy thật** (03-07-2026, packets_seen=308, web tải bình thường).
 > - **B2 (PID→profile mapping): PASS trên máy thật** (03-07-2026, events_seen=42, 11 entry PID/tên khớp Task Manager).
-> - Đang ở: **B3 (transparent redirect)** — code xong (Redirector NETWORK-layer + gateway
->   transparent mode + `selftest_b3.py` end-to-end với proxy thật + curl.exe), chờ self-test.
+> - **B3 (transparent redirect): redirect PASS trên máy thật** (03-07-2026, dùng
+>   `dummy_test_proxy.py` local vì chưa có proxy thật) — nhưng **kill-switch FAIL** lần đầu:
+>   cổng ephemeral bị tái sử dụng giữa 2 lần gọi `curl.exe`, bảng sống (SOCKET layer) giữ PID
+>   cũ đã thoát, khiến `profile_for_pid()` không resolve được và gói bị coi là "không quản lý"
+>   → đi thẳng, rò rỉ IP thật. **Đã fix**: `pid_for_port()` đảo thứ tự ưu tiên — psutil (ground
+>   truth ngay lúc đó) trước, bảng sống SOCKET layer chỉ làm fallback. Thêm test hồi quy.
+>   Đang chờ self-test lại B3 để xác nhận fix trên máy thật.
 
 ## 1. Mục tiêu
 Ép các app **không hỗ trợ cấu hình proxy** (game client, tool bất kỳ) đi ra Internet qua

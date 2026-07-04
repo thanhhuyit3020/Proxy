@@ -127,15 +127,29 @@ class PidWatcher:
         return self._running
 
     def pid_for_port(self, local_port: int) -> int | None:
-        """Tra cuu PID theo local_port: uu tien bang song (SOCKET layer), fallback
-        sang psutil neu ket noi da mo truoc khi watcher bat dau hoac entry da het han."""
+        """Tra cuu PID theo local_port: uu tien psutil (phan anh dung trang thai OS
+        NGAY LUC NAY, khong the stale) truoc; chi fallback sang bang song (SOCKET
+        layer) neu psutil khong thay gi.
+
+        Ly do dao thu tu (khong uu tien bang song nhu ban dau): cong ephemeral co
+        the bi he dieu hanh tai su dung rat nhanh giua 2 lan ket noi cua 2 tien
+        trinh khac nhau (vd 2 lan goi lien tiep cung 1 app). Bang song ghi nhan PID
+        tai thoi diem CONNECT xay ra va KHONG tu xoa khi tien trinh do thoat, nen
+        neu cong bi tai su dung, bang song se tra ve PID CU (da thoat) thay vi PID
+        that su dang giu cong ngay luc nay -- lam profile_for_pid() khong resolve
+        duoc ten tien trinh, khien Redirector coi goi la "khong quan ly" va cho di
+        thang (bo qua ca redirect lan kill-switch, tuc la LO IP THAT). Phat hien
+        qua self-test B3 thuc te: kill-switch bi bo qua o lan goi curl.exe thu 2."""
+        pid = lookup_pid_by_port(local_port)
+        if pid is not None:
+            return pid
         with self._lock:
             entry = self._table.get(local_port)
-            if entry is not None:
-                pid, last_seen = entry
-                if time.monotonic() - last_seen <= self.entry_ttl_seconds:
-                    return pid
-        return lookup_pid_by_port(local_port)
+        if entry is not None:
+            pid, last_seen = entry
+            if time.monotonic() - last_seen <= self.entry_ttl_seconds:
+                return pid
+        return None
 
     def snapshot(self) -> dict[int, int]:
         """Ban sao bang hien tai (local_port -> pid), khong loc TTL -- dung de debug/hien thi."""
